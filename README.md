@@ -1,6 +1,6 @@
 # CortaDaqui
 
-![CortaDaqui demo playing a YouTube cut with source time and its start at 01:35.025 and end at 01:37.078 displayed over the clip](assets/cortadaqui-demo.gif)
+![CortaDaqui demo showing a YouTube clip from 01:35 to 01:37, with both times displayed over the video](assets/cortadaqui-demo.gif)
 
 Pick the start and end of a public YouTube video and save that segment as an MP4. CortaDaqui is a native Rust app for Windows x64 with a lightweight Slint interface.
 
