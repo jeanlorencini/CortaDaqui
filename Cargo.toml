@@ -1,0 +1,31 @@
+[package]
+name = "cortadaqui"
+version = "0.1.0"
+edition = "2024"
+description = "Corte local de vídeos do YouTube no Windows"
+
+[dependencies]
+anyhow = "1"
+arboard = { version = "3", default-features = false }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+process-wrap = { version = "9", features = ["std"] }
+rfd = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+slint = { version = "1", default-features = false, features = ["std", "backend-winit", "renderer-software", "accessibility", "compat-1-2"] }
+tempfile = "3"
+ureq = { version = "3", features = ["json"] }
+url = "2"
+zip = { version = "7", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_System_DataExchange"] }
+
+[build-dependencies]
+slint-build = "1"
+
+[profile.release]
+strip = true
+lto = "thin"

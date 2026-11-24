@@ -1,0 +1,528 @@
+import { Button, CheckBox, LineEdit, ProgressIndicator, AboutSlint } from "std-widgets.slint";
+
+global Theme {
+    out property <color> canvas: #0e151d;
+    out property <color> card: #17222d;
+    out property <color> field: #121b25;
+    out property <color> border: #304052;
+    out property <color> text: #edf4f8;
+    out property <color> secondary: #a9bbc9;
+    out property <color> accent: #9aefc1;
+    out property <color> danger: #ffaaa9;
+}
+
+component Panel inherits Rectangle {
+    background: Theme.card;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 16px;
+}
+
+component Label inherits Text {
+    color: Theme.secondary;
+    font-size: 13px;
+    font-weight: 600;
+    vertical-alignment: center;
+}
+
+component Heading inherits Text {
+    color: Theme.text;
+    font-size: 19px;
+    font-weight: 650;
+    vertical-alignment: center;
+}
+
+component AccentButton inherits Button {
+    primary: true;
+    min-height: 40px;
+}
+
+component Timeline inherits Rectangle {
+    in property <int> total: 0;
+    in property <int> start: 0;
+    in property <int> end: 0;
+    in property <bool> enabled;
+    callback seek(int, int);
+
+    private property <length> inset: 12px;
+    private property <length> span: max(1px, root.width - 2 * root.inset);
+    private property <length> start-x: root.inset + root.span * root.start / max(1, root.total);
+    private property <length> end-x: root.inset + root.span * root.end / max(1, root.total);
+    private property <int> handle;
+
+    height: 38px;
+
+    Rectangle {
+        x: root.inset;
+        y: (parent.height - self.height) / 2;
+        width: root.span;
+        height: 7px;
+        border-radius: 4px;
+        background: Theme.border;
+    }
+
+    if root.total > 0: Rectangle {
+        x: root.start-x;
+        y: (parent.height - self.height) / 2;
+        width: max(1px, root.end-x - root.start-x);
+        height: 7px;
+        background: Theme.accent;
+    }
+
+    for number in root.total > 0 ? 2 : 0: Rectangle {
+        x: (number == 0 ? root.start-x : root.end-x) - self.width / 2;
+        y: (parent.height - self.height) / 2;
+        width: 17px;
+        height: 27px;
+        border-radius: 5px;
+        border-width: 1px;
+        border-color: #76cba0;
+        background: root.enabled ? Theme.accent : #7d9c8e;
+
+        Rectangle {
+            width: 3px;
+            height: 11px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 2px;
+            background: #2c5d47;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled && root.total > 0;
+        mouse-cursor: self.pressed ? grabbing : pointer;
+        pointer-event(event) => {
+            if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                root.handle = abs(self.mouse-x - root.start-x) < abs(self.mouse-x - root.end-x) ? 0 : 1;
+                root.seek(root.handle, round(clamp((self.mouse-x - root.inset) / root.span, 0, 1) * root.total));
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.seek(root.handle, round(clamp((self.mouse-x - root.inset) / root.span, 0, 1) * root.total));
+            }
+        }
+    }
+}
+
+component ToolCard inherits Panel {
+    in property <string> name;
+    in property <string> purpose;
+    in property <string> version;
+    in property <string> available;
+    in property <bool> busy;
+    callback check;
+    callback install;
+
+    HorizontalLayout {
+        padding: 18px;
+        spacing: 16px;
+        VerticalLayout {
+            spacing: 5px;
+            Heading { text: root.name; }
+            Label { text: root.purpose; font-weight: 400; }
+        }
+        VerticalLayout {
+            spacing: 5px;
+            alignment: center;
+            Label {
+                text: root.version != "" ? "Versão " + root.version : "Instalação pendente";
+                horizontal-alignment: right;
+            }
+            if root.available != "": Label {
+                text: "Disponível  " + root.available;
+                color: Theme.accent;
+                horizontal-alignment: right;
+            }
+        }
+        HorizontalLayout {
+            alignment: end;
+            spacing: 8px;
+            if root.version != "": Button {
+                text: "Verificar";
+                accessible-label: "Verificar " + root.name;
+                enabled: !root.busy;
+                clicked => { root.check(); }
+            }
+            if root.version == "" || root.available != "": AccentButton {
+                text: root.version == "" ? "Instalar" : "Atualizar";
+                accessible-label: self.text + " " + root.name;
+                enabled: !root.busy;
+                clicked => { root.install(); }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "CortaDaqui";
+    no-frame: true;
+    preferred-width: 1080px;
+    preferred-height: 680px;
+    min-width: 850px;
+    min-height: 626px;
+    background: Theme.canvas;
+    default-font-family: "Segoe UI";
+    default-font-size: 14px;
+    in-out property <string> link;
+    in-out property <string> start-text: "00:00:00";
+    in-out property <string> end-text: "00:00:00";
+    in-out property <bool> detect-links;
+    in-out property <bool> tools-page;
+    in property <bool> ready;
+    in property <bool> busy;
+    in property <bool> exporting;
+    in property <bool> cancelling;
+    in property <string> video-title;
+    in property <image> thumbnail;
+    in property <bool> has-thumbnail;
+    in property <int> total-ms;
+    in property <int> start-ms;
+    in property <int> end-ms;
+    in property <string> total-time: "00:00:00";
+    in property <string> clip-time: "00:00:00";
+    in property <string> range-error;
+    in-out property <string> folder;
+    in property <string> status: "Preparando ferramentas…";
+    in property <string> status-detail;
+    in property <int> status-kind;
+    in property <float> progress: -1;
+    in property <string> yt-version;
+    in property <string> yt-available;
+    in property <string> ffmpeg-version;
+    in property <string> ffmpeg-available;
+
+    callback load-link;
+    callback link-edited;
+    callback times-edited;
+    callback seek(int, int);
+    callback choose-folder;
+    callback export-clip;
+    callback cancel;
+    callback prepare-tools;
+    callback check-tool(int);
+    callback install-tool(int);
+    callback detection-toggled;
+    callback minimize-window;
+    callback toggle-window-size;
+    callback close-window;
+
+    VerticalLayout {
+        padding: 26px;
+        spacing: 17px;
+        HorizontalLayout {
+            spacing: 12px;
+            min-height: 42px;
+            branding := Rectangle {
+                horizontal-stretch: 1;
+                min-width: 220px;
+                WindowMoveArea {
+                HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+            Rectangle {
+                width: 37px;
+                height: 37px;
+                border-radius: 10px;
+                background: Theme.accent;
+                Text {
+                    text: "✂";
+                    font-family: "Segoe UI Symbol";
+                    font-size: 23px;
+                    color: #143326;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+            Heading { text: "CortaDaqui"; font-size: 24px; font-weight: 700; }
+                }
+                }
+            }
+            Button {
+                text: "Corte";
+                min-width: 88px;
+                primary: !root.tools-page;
+                clicked => { root.tools-page = false; }
+            }
+            Button {
+                text: "Ferramentas";
+                primary: root.tools-page;
+                clicked => { root.tools-page = true; }
+            }
+            Rectangle {
+                width: 1px;
+                background: Theme.border;
+            }
+            Button {
+                text: "−";
+                min-width: 38px;
+                accessible-label: "Minimizar janela";
+                clicked => { root.minimize-window(); }
+            }
+            Button {
+                text: "□";
+                min-width: 38px;
+                accessible-label: "Maximizar ou restaurar janela";
+                clicked => { root.toggle-window-size(); }
+            }
+            Button {
+                text: "×";
+                min-width: 38px;
+                accessible-label: "Fechar janela";
+                clicked => { root.close-window(); }
+            }
+        }
+
+        if !root.tools-page: VerticalLayout {
+            spacing: 14px;
+            HorizontalLayout {
+                spacing: 10px;
+                url-input := LineEdit {
+                    text <=> root.link;
+                    placeholder-text: "Cole um link do YouTube";
+                    accessible-label: "Link do vídeo do YouTube";
+                    min-height: 42px;
+                    enabled: !root.busy;
+                    edited => { root.link-edited(); }
+                    accepted => { if root.ready && !root.busy { root.load-link(); } }
+                }
+                AccentButton {
+                    text: "Carregar";
+                    min-width: 112px;
+                    enabled: root.ready && !root.busy && root.link != "";
+                    clicked => { root.load-link(); }
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 14px;
+                Panel {
+                    horizontal-stretch: 1;
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 12px;
+                        HorizontalLayout {
+                            Heading { text: "Prévia"; }
+                            Label {
+                                text: root.total-ms != 0 ? root.total-time : "";
+                                horizontal-alignment: right;
+                            }
+                        }
+                        Rectangle {
+                            vertical-stretch: 1;
+                            min-height: 170px;
+                            background: @linear-gradient(145deg, #182f3b 0%, #112029 52%, #132923 100%);
+                            border-radius: 12px;
+                            clip: true;
+                            if root.has-thumbnail: Image {
+                                source: root.thumbnail;
+                                image-fit: contain;
+                                width: parent.width;
+                                height: parent.height;
+                                accessible-role: image;
+                                accessible-label: "Miniatura de " + root.video-title;
+                            }
+                            if !root.has-thumbnail: VerticalLayout {
+                                alignment: center;
+                                spacing: 10px;
+                                Rectangle {
+                                    height: 52px;
+                                    width: 52px;
+                                    x: (parent.width - self.width) / 2;
+                                    border-radius: 16px;
+                                    border-width: 1px;
+                                    border-color: #4b6a6b;
+                                    background: #234341;
+                                    Text {
+                                        text: "▶";
+                                        color: Theme.accent;
+                                        font-family: "Segoe UI Symbol";
+                                        font-size: 19px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                Label {
+                                    text: root.total-ms == 0 ? "Aguardando vídeo" : "Miniatura indisponível";
+                                    color: Theme.text;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.total-ms == 0 ? "Carregue um link para ver os detalhes do vídeo." : root.video-title;
+                            color: root.total-ms == 0 ? Theme.secondary : Theme.text;
+                            font-weight: root.total-ms == 0 ? 400 : 600;
+                            font-size: 15px;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                Panel {
+                    horizontal-stretch: 1;
+                    VerticalLayout {
+                        padding: 18px;
+                        spacing: 10px;
+                        Heading { text: "Intervalo do corte"; }
+                        Label { text: "Arraste as alças ou digite os tempos."; font-weight: 400; }
+                        Timeline {
+                            total: root.total-ms;
+                            start: root.start-ms;
+                            end: root.end-ms;
+                            enabled: !root.busy;
+                            seek(handle, time) => { root.seek(handle, time); }
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            VerticalLayout {
+                                spacing: 6px;
+                                Label { text: "Início"; }
+                                LineEdit {
+                                    text <=> root.start-text;
+                                    accessible-label: "Início do corte";
+                                    min-height: 37px;
+                                    enabled: root.total-ms > 0 && !root.busy;
+                                    edited => { root.times-edited(); }
+                                    accepted => { root.times-edited(); }
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 6px;
+                                Label { text: "Fim"; }
+                                LineEdit {
+                                    text <=> root.end-text;
+                                    accessible-label: "Fim do corte";
+                                    min-height: 37px;
+                                    enabled: root.total-ms > 0 && !root.busy;
+                                    edited => { root.times-edited(); }
+                                    accepted => { root.times-edited(); }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            if root.range-error == "": Label { text: "Duração do trecho"; }
+                            Label {
+                                text: root.range-error == "" ? root.clip-time : root.range-error;
+                                color: root.range-error == "" ? Theme.accent : Theme.danger;
+                                horizontal-alignment: root.range-error == "" ? right : left;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                        Rectangle { height: 1px; background: Theme.border; }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 4px;
+                                Label { text: "Destino do MP4"; }
+                                LineEdit {
+                                    text <=> root.folder;
+                                    placeholder-text: "Selecione ou digite o caminho";
+                                    accessible-label: "Caminho da pasta de exportação";
+                                    min-height: 35px;
+                                    enabled: !root.busy;
+                                }
+                            }
+                            Button {
+                                text: "Escolher pasta";
+                                enabled: !root.busy;
+                                clicked => { root.choose-folder(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.tools-page: VerticalLayout {
+            spacing: 12px;
+            Heading { text: "Ferramentas de exportação"; font-size: 23px; }
+            ToolCard {
+                name: "yt-dlp";
+                purpose: "Carrega informações e baixa o vídeo.";
+                version: root.yt-version;
+                available: root.yt-available;
+                busy: root.busy;
+                check => { root.check-tool(0); }
+                install => { root.install-tool(0); }
+            }
+            ToolCard {
+                name: "FFmpeg";
+                purpose: "Codifica o trecho e verifica o MP4.";
+                version: root.ffmpeg-version;
+                available: root.ffmpeg-available;
+                busy: root.busy;
+                check => { root.check-tool(1); }
+                install => { root.install-tool(1); }
+            }
+            Panel {
+                VerticalLayout {
+                    padding: 18px;
+                    spacing: 5px;
+                    CheckBox {
+                        text: "Detectar links copiados do YouTube";
+                        checked <=> root.detect-links;
+                        toggled => { root.detection-toggled(); }
+                    }
+                    Label {
+                        text: "Nesta sessão, um link copiado com marca de tempo preenche o início do corte.";
+                        font-weight: 400;
+                    }
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+            AboutSlint {}
+        }
+
+        Panel {
+            HorizontalLayout {
+                padding: 14px;
+                spacing: 15px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 5px;
+                    Text {
+                        text: root.status;
+                        color: root.status-kind == 1 ? Theme.danger : root.status-kind == 2 ? Theme.accent : Theme.text;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                    }
+                    if root.status-detail != "": Text {
+                        text: root.status-detail;
+                        color: Theme.secondary;
+                        font-size: 12px;
+                        overflow: elide;
+                        accessible-label: self.text;
+                    }
+                    if root.busy: ProgressIndicator {
+                        progress: max(0, root.progress);
+                        indeterminate: root.progress < 0;
+                        accessible-label: root.status;
+                    }
+                }
+                if root.busy && root.progress >= 0: Label {
+                    text: round(root.progress * 100) + "%";
+                }
+                if root.exporting: Button {
+                    text: root.cancelling ? "Cancelando…" : "Cancelar";
+                    min-width: 126px;
+                    enabled: !root.cancelling;
+                    clicked => { root.cancel(); }
+                }
+                if !root.busy && !root.ready: AccentButton {
+                    text: "Tentar novamente";
+                    clicked => { root.prepare-tools(); }
+                }
+                if !root.tools-page && root.ready && !root.exporting: AccentButton {
+                    text: "Exportar MP4";
+                    min-width: 144px;
+                    enabled: !root.busy && root.total-ms > 0 && root.range-error == "" && root.folder != "";
+                    clicked => { root.export-clip(); }
+                }
+            }
+        }
+    }
+}
